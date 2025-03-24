@@ -7,6 +7,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "../project_config.h"
+#include <Adafruit_MLX90640.h>
+
 
 // Replace with your network credentials
 const char* ssid = PROJECT_WIFI_SSID;
@@ -14,6 +16,13 @@ const char* password = PROJECT_WIFI_PASSWORD;
 
 // const char* ssid = "ACLAB";
 // const char* password = "ACLAB2023";
+
+
+Adafruit_MLX90640 mlx;
+float frame[32 * 24]; // Buffer chứa dữ liệu nhiệt độ
+
+#define MINTEMP 20
+#define MAXTEMP 35
 
 
 // Set LED GPIO
@@ -39,6 +48,33 @@ String processor(const String& var){
   }
   return String();
 }
+
+//thermal camera task
+void mlxTask(void *pvParameters) {
+  Serial.begin(115200);
+  if (!mlx.begin(MLX90640_I2CADDR_DEFAULT, &Wire)) {
+    Serial.println("MLX90640 không tìm thấy!");
+    vTaskDelete(NULL);
+  }
+  mlx.setMode(MLX90640_CHESS);
+  mlx.setResolution(MLX90640_ADC_18BIT);
+  mlx.setRefreshRate(MLX90640_8_HZ);
+  Wire.setClock(1000000); // Tốc độ 1 MHz
+
+  while (1) {
+    if (mlx.getFrame(frame) == 0) {
+      Serial.println("Dữ liệu nhiệt độ:");
+      for (int i = 0; i < 32 * 24; i++) {
+        Serial.print(frame[i]); Serial.print(" ");
+      }
+      Serial.println();
+    } else {
+      Serial.println("Lỗi đọc cảm biến!");
+    }
+    vTaskDelay(500 / portTICK_PERIOD_MS); // Đọc mỗi 500ms
+  }
+}
+
 
 // Task to handle Wi-Fi connection
 void wifiTask(void *pvParameters) {
@@ -95,6 +131,7 @@ void setup(){
   // Create tasks for Wi-Fi and server
   xTaskCreate(wifiTask, "WiFiTask", 4096, NULL, 1, NULL);
   xTaskCreate(serverTask, "ServerTask", 8192, NULL, 1, NULL);
+  xTaskCreate(mlxTask, "MLX90640Task", 8192, NULL, 1, NULL);
 }
  
 void loop(){
