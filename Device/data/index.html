@@ -1,15 +1,78 @@
 <!DOCTYPE html>
-<html>
+<html lang="vi"> <!-- Thêm lang="vi" -->
 <head>
+  <meta charset="UTF-8"> <!-- Thêm charset -->
   <title>ESP32 Web Server</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" href="data:,">
   <link rel="stylesheet" type="text/css" href="style.css">
+  <style>
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 20px;
+    }
+    th, td {
+      border: 1px solid black;
+      text-align: center;
+      padding: 5px;
+      font-size: 12px;
+    }
+    th {
+      background-color: #f2f2f2;
+    }
+  </style>
 </head>
 <body>
   <h1>ESP32 Web Server</h1>
-  <p>GPIO state: <strong> %STATE%</strong></p>
+  <p>GPIO state: <strong>%STATE%</strong></p>
   <p><a href="/on"><button class="button">ON</button></a></p>
   <p><a href="/off"><button class="button button2">OFF</button></a></p>
+
+  <h2>MLX90640 Temperature Data</h2>
+  <button onclick="fetchFrameData()">Refresh Data</button>
+  <div id="loading">Đang tải dữ liệu...</div>
+  <table id="tempTable"></table>
+
+  <script>
+    async function fetchFrameData() {
+      try {
+        document.getElementById("loading").style.display = "block"; // Hiển thị trạng thái tải
+        const response = await fetch('/getFrameData');
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        document.getElementById("loading").style.display = "none"; // Ẩn trạng thái tải
+
+        if (!Array.isArray(data) || data.length !== 32 * 24) {
+          console.error("Dữ liệu không hợp lệ:", data);
+          return;
+        }
+
+        let table = document.getElementById("tempTable");
+        table.innerHTML = ""; // Xóa bảng cũ
+
+        let rows = 24, cols = 32;
+        for (let i = 0; i < rows; i++) {
+          let row = table.insertRow();
+          for (let j = 0; j < cols; j++) {
+            let cell = row.insertCell();
+            cell.innerHTML = Number(data[i * cols + j]).toFixed(1); // Định dạng số
+          }
+        }
+      } catch (error) {
+        console.error('Lỗi khi lấy dữ liệu từ cảm biến:', error);
+      }
+    }
+
+    // Gọi API mỗi 2 giây để cập nhật dữ liệu
+    setInterval(fetchFrameData, 2000);
+
+    // Tải dữ liệu ngay khi mở trang
+    window.onload = fetchFrameData;
+  </script>
 </body>
 </html>
