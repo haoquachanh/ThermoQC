@@ -2,28 +2,40 @@
 
 #include "background_Task.h"
 
+#include <WiFi.h>
+#include <PubSubClient.h>
+#include <ArduinoJson.h>
+
+// WiFi info (chỉnh trong file background_Task.h hoặc platformio.ini)
 const char* ssid = PROJECT_WIFI_SSID;
 const char* password = PROJECT_WIFI_PASSWORD;
 
-static const int ledPin = 10; // Chân LED GPIO
-AsyncWebServer server(80);
-// float frame1[32 * 24]; // Dữ liệu từ cảm biến 1
-// float frame2[32 * 24]; // Dữ liệu từ cảm biến 2
+// MQTT broker info
+#define BROKER_ADDRESS "app.coreiot.io"
+#define MQTT_PORT 1883
+#define MQTT_TOPIC "v1/devices/me/telemetry"
+#define MQTT_CLIENT_ID "device"
+#define MQTT_USERNAME "device"
+#define MQTT_PASSWORD "device"
 
-// Kết nối WiFi
+// MQTT and WiFi clients
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+// WiFi task
 void wifiTask(void *pvParameters) {
     Serial.begin(115200);
     WiFi.begin(ssid, password);
 
     int retry = 0;
-    while (WiFi.status() != WL_CONNECTED && retry < 20) { // Thử tối đa 20 lần (~20 giây)
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    while (WiFi.status() != WL_CONNECTED && retry < 20) {
         Serial.println("Đang kết nối WiFi...");
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
         retry++;
     }
 
     if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("WiFi Connected!");
+        Serial.println("WiFi đã kết nối!");
         Serial.println(WiFi.localIP());
     } else {
         Serial.println("Kết nối WiFi thất bại!");
@@ -32,45 +44,84 @@ void wifiTask(void *pvParameters) {
     vTaskDelete(NULL);
 }
 
-// Xử lý dữ liệu cảm biến MLX90640
-void readMLX90640Data() {
-    // TODO: Đọc dữ liệu từ MLX90640 vào frame1 và frame2
-}
+// Gửi mảng dữ liệu
+void sendArrayData() {
+    // Tính dung lượng document
+    constexpr size_t CAPACITY =
+        JSON_OBJECT_SIZE(1)    // { "thermal": [...] }
+      + JSON_ARRAY_SIZE(100);  // array of 768 elements
 
-// API gửi dữ liệu cảm biến
-void serverTask(void *pvParameters) {
-    if (!SPIFFS.begin(true)) {
-        Serial.println("Lỗi khi khởi tạo SPIFFS");
-        vTaskDelete(NULL);
+    StaticJsonDocument<CAPACITY> doc;
+
+    // Tạo mảng 768 phần tử
+    JsonArray tempArray = doc.createNestedArray("thermal");
+    for (int i = 0; i < 50; i++) {
+        tempArray.add(i + 1);
     }
 
-    // Route "/" trả về dữ liệu từ 2 cảm biến nhiệt
-    // server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-    //     readMLX90640Data(); // Đọc dữ liệu trước khi gửi
+    // Đo kích thước JSON +1 cho '\0'
+    size_t needed = measureJson(doc) + 1;
 
-    //     String json = "{ \"cam1\": [";
-    //     for (int i = 0; i < 32 * 24; i++) {
-    //         json += String(frame1[i]);
-    //         if (i < (32 * 24 - 1)) json += ",";
-    //     }
-    //     json += "], \"cam2\": [";
-    //     for (int i = 0; i < 32 * 24; i++) {
-    //         json += String(frame2[i]);
-    //         if (i < (32 * 24 - 1)) json += ",";
-    //     }
-    //     json += "] }";
-        
-    //     request->send(200, "application/json", json);
-    // });
+    // Cấp phát payload động
+    char* payload = (char*)malloc(needed);
+    if (!payload) {
+        Serial.println("⚠️ Không đủ bộ nhớ để tạo payload");
+        return;
+    }
 
-    server.begin();
-    vTaskDelete(NULL);
+    // Serialize vào buffer — dùng đúng overload với bufferSize
+    size_t len = serializeJson(doc, payload, needed);
+    payload[len] = '\0';  // đảm bảo kết thúc chuỗi
+
+    Serial.print("Đang gửi MQTT (");
+    Serial.print(len);
+    Serial.println(" bytes):");
+    //Serial.println(payload);
+
+    // Gửi MQTT
+    bool ok = client.publish(MQTT_TOPIC, payload);
+    if (!ok) {
+        Serial.println("⚠️ Gửi MQTT thất bại");
+    }
+
+    free(payload);
 }
 
-// Khởi tạo các task nền
-void backgroundTaskInit() {
-    pinMode(ledPin, OUTPUT);
+// MQTT reconnect
+void reconnect() {
+    while (!client.connected()) {
+        Serial.println("Đang kết nối MQTT...");
 
+        if (client.connect(MQTT_CLIENT_ID, MQTT_USERNAME, MQTT_PASSWORD)) {
+            Serial.println("Đã kết nối MQTT!");
+        } else {
+            Serial.print("Thất bại, mã lỗi = ");
+            Serial.print(client.state());
+            Serial.println(". Thử lại sau 5s...");
+            delay(5000);
+        }
+    }
+}
+
+// MQTT task
+void mqttTask(void *pvParameters) {
+    client.setServer(BROKER_ADDRESS, MQTT_PORT);
+
+    while (1) {
+        if (!client.connected()) {
+            reconnect();
+        }
+
+        client.loop();
+
+        sendArrayData(); // Gửi dữ liệu mỗi 5 giây
+
+        vTaskDelay(15000 / portTICK_PERIOD_MS);
+    }
+}
+
+// Khởi tạo các task
+void backgroundTaskInit() {
     xTaskCreate(wifiTask, "WiFiTask", 4096, NULL, 1, NULL);
-    xTaskCreate(serverTask, "ServerTask", 8192, NULL, 1, NULL);
+    xTaskCreate(mqttTask, "TelemetryTask", 10240, NULL, 1, NULL);
 }

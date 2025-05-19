@@ -9,7 +9,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "../project_config.h"
-
+#include "ThingsBoard.h"
+#include "Arduino_MQTT_Client.h" 
 void backgroundTaskInit();
 
 #endif // BACKGROUND_TASK_H
