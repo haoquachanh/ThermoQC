@@ -87,18 +87,33 @@ export default function GridPage() {
         .from("thermal_datas")
         .select("*");
       // eslint-disable-next-line react-hooks/exhaustive-deps
-      setData(thermal_data || []);
+      const sorted = (thermal_data || []).sort((a, b) => a.ts - b.ts);
+      setData(sorted);
+      // setData(thermal_data || []);
       console.log("thermal_datas:   ", thermal_data);
     }
 
     getDataFromDB();
   }, []);
 
-  const getColorFromTemperature = (temp: number, min: number, max: number) => {
-    const minTemp = min;
-    const maxTemp = max;
-    const clamped = Math.max(minTemp, Math.min(maxTemp, temp));
-    const t = (clamped - minTemp) / (maxTemp - minTemp); // 0 → 1
+  // src/utils/math.ts
+  // src/utils/math.ts
+  function findMinMax1D(arr: number[]): { min: number; max: number } {
+    let min = 100;
+    let max = -50;
+
+    for (const val of arr) {
+      if (val < min) min = val;
+      if (val > max) max = val;
+    }
+
+    return { min, max };
+  }
+
+  const getColorFromTemperature = (temp: number) => {
+    const { min, max } = findMinMax1D(grid);
+    const clamped = Math.max(min, Math.min(max, temp));
+    const t = (clamped - min) / (max - min); // 0 → 1
 
     const h = (1 - t) * 240; // xanh (240°) → đỏ (0°)
     return `hsl(${h}, 80%, 53%)`;
@@ -192,16 +207,16 @@ export default function GridPage() {
         <h1 className="text-2xl font-bold">Thermal Image</h1>
         <div className="max-w-fit mx-auto bg-white p-3 rounded-lg flex flex-row">
           <div>
-            <h2>
+            <h2 className="text-xl font-mono text-gray-800">
               Dữ liệu ảnh nhiệt tại thời điểm:{" "}
               {data.find((item) => item.id === theId)?.ts
                 ? new Date(
                     Number(data.find((item) => item.id === theId)?.ts) * 1000
                   ).toLocaleString()
-                : "Không xác định"}
+                : "15:45:13 12/5/2025"}
             </h2>
             <div
-              className="grid rounded border-0"
+              className="grid rounded border-4 border-gray-300"
               style={{
                 gridTemplateColumns: `repeat(${GRID_WIDTH}, minmax(1px, 1fr))`,
               }}
@@ -216,7 +231,7 @@ export default function GridPage() {
                     key={index}
                     className="w-[1.8em] h-[1.8em] m-[0px] p-0 cursor-pointer"
                     style={{
-                      backgroundColor: getColorFromTemperature(value, 25, 55),
+                      backgroundColor: getColorFromTemperature(value),
                     }}
                     title={` ${value.toFixed(1)}°C`}
                   ></div>
@@ -225,15 +240,13 @@ export default function GridPage() {
             </div>
           </div>
           <div className="ml-4">
-            <p className="mt-4 text-sm text-gray-600">
-              Selected cells: {selectedCells.size}
+            <p className="mt-4 text-xl text-gray-600">Chỉ số MSE</p>
+            <p className="text-7xl font-bold text-gray-800 mb-8">
+              {data.find((item) => item.id === theId)?.mse.toFixed(0) || 21}
             </p>
-            <p className="mt-2 text-sm text-gray-500">
-              Tip: Click and drag to select multiple cells
-            </p>
-
             {/* Hiển thị danh sách key */}
-            <div className="mt-4 text-sm text-gray-700 max-h-60 overflow-y-auto space-y-1">
+            <p>Xem thêm dữ liệu nhiệt tại thời điểm</p>
+            <div className="mt-4 text-sm text-gray-700 max-h-80 overflow-y-auto space-y-1">
               {data.map((item, idx) => (
                 <div
                   key={idx}
@@ -254,13 +267,16 @@ export default function GridPage() {
                     theId === item.id ? "bg-blue-200" : "bg-gray-100"
                   }`}
                 >
-                  {new Date(Number(item.ts) * 1000).toLocaleString()}
+                  {(() => {
+                    const date = new Date(Number(item.ts) * 1000);
+                    return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
+                  })()}
                 </div>
               ))}
             </div>
 
             {/* Nút chức năng */}
-            <div className="mt-4 flex flex-col gap-2">
+            {/* <div className="mt-4 flex flex-col gap-2">
               <button
                 onClick={handleToggleSelection}
                 className="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600"
@@ -273,7 +289,7 @@ export default function GridPage() {
               >
                 {`Don't Care`}
               </button>
-            </div>
+            </div> */}
           </div>
         </div>
       </div>
