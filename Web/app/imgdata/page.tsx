@@ -214,7 +214,7 @@ export default function GridPage() {
                 return (
                   <div
                     key={index}
-                    className="w-[1.8em] h-[1.8em] m-[0px] p-0 rounded rounded-none cursor-pointer"
+                    className="w-[1.8em] h-[1.8em] m-[0px] p-0 cursor-pointer"
                     style={{
                       backgroundColor: getColorFromTemperature(value, 25, 55),
                     }}
@@ -239,9 +239,14 @@ export default function GridPage() {
                   key={idx}
                   onClick={() => {
                     const raw = item.value.replace(/[\[\]\s]/g, "");
+                    interface ThermalDataItem {
+                      id: number;
+                      ts: number | string;
+                      value: string;
+                    }
                     const numbers: number[] = raw
                       .split(",")
-                      .map((v) => parseFloat(v));
+                      .map((v: string) => parseFloat(v));
                     setTheId(item.id);
                     setGrid(numbers);
                   }}
